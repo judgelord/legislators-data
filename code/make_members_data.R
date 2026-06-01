@@ -1,3 +1,4 @@
+# This script aguments member names from voteview to enable merging with wide variety of name formats. 
 # this script creates members.rda
 library(tidyverse)
 library(magrittr)
@@ -5,29 +6,14 @@ source("code/stateFromLower.R")
 
 
 # old method used Rvoteview package. Now using bulk data. http://voteview.com/data
-if(F){
-## Rvoteview dependencies can through errors, so this script creates members.Rdata, which limits the use of voteview and saves the augmented names
-if(!"Rvoteview" %in% rownames(installed.packages())) {
-   devtools::install_github("voteview/Rvoteview")
-}
-library(Rvoteview)
-
-# This script aguments member names from voteview to enable merging with wide variety of name formats. Matching functions are in nameMethods.R
-
-members <- full_join(member_search(congress = c(105:108)) %>% select(-congresses),
-                     member_search(congress = c(109:117)))  # get voteview data for selected Congresses
-
-members %>% distinct(congress)
-} 
-
-
-# alternatively  use bulk data http://voteview.com/data
 members <- read_csv(here::here("data", "HSall_members.csv"))
-parties <- read_csv(here::here("data", "HSall_parties.csv"))
+
+## Not currently using the parties data 
+# parties <- read_csv(here::here("data", "HSall_parties.csv"))
 
 
   # format state full names from abbrev
- members%<>%
+ members %<>%
    mutate(state = stateFromLower(state_abbrev))
    
  if("party_size" %in% names(members)){
@@ -310,7 +296,7 @@ parties <- read_csv(here::here("data", "HSall_parties.csv"))
     mutate(common_name = ifelse(bioname == "HASTERT, John Dennis", "Dennis", common_name)) %>%
     mutate(common_name = ifelse(bioname == "ROUNDS, Marion Michael (Mike)", "(Mike|Michael)", common_name)) %>%
     mutate(common_name = ifelse(bioname == "DINGELL, Debbie", "Deborah", common_name)) %>%
-    mutate(common_name = ifelse(bioname == "JOHNSON, Eddie Bernice", "Bernice", common_name)) %>%
+    # mutate(common_name = ifelse(bioname == "JOHNSON, Eddie Bernice", "Bernice", common_name)) %>% # CAUSES ERRORS WITH Bill Johnson as B Johnson
     mutate(common_name = ifelse(bioname == "TAYLOR, Nicholas", "Van", common_name)) %>%
     mutate(common_name = ifelse(bioname == "MALONEY, Sean Patrick", "Patrick", common_name)) %>%
     mutate(common_name = ifelse(bioname == "JOHNSON, Dustin", "Dusty", common_name)) %>%
@@ -571,7 +557,10 @@ parties <- read_csv(here::here("data", "HSall_parties.csv"))
     mutate(first_name = ifelse(bioname == "MACK, Connie, IV", "Connie", first_name)) %>% 
     mutate(first_name = ifelse(bioname == "CONAWAY, K. Michael", "Kenneth", first_name)) %>%
     mutate(first_name = ifelse(bioname == "BONNER, Jr., Josiah Robins (Jo)", "Josiah", first_name)) %>%
-    mutate(first_name = ifelse(bioname == "GRUCCI, Jr., Felix J.)", "Felix", first_name))
+    mutate(first_name = ifelse(bioname == "GRUCCI, Jr., Felix J.)", "Felix", first_name)) %>% 
+    # first names that reduce false matches in specific congresses 
+    mutate(first_name = ifelse(bioname == "JOHNSON, Timothy Peter (Tim)" & congress %in% 107:112, "Tim", first_name))
+  
   
      
   
@@ -646,7 +635,10 @@ parties <- read_csv(here::here("data", "HSall_parties.csv"))
   
   members %<>% 
     ungroup() %>% 
-    mutate(last = str_c("(^|senator |representative )", last_name, "\\b"), # captures wrong chambers (below, non-unique last names require a state)
+    mutate(last = ifelse( chamber=="Senate",
+                          str_c("(^|senator )", last_name, "\\b"),
+                          str_c("(^|representative )", last_name, "\\b") ),
+                          # captures wrong chambers (below, non-unique last names require a state)
            last_comma_first = paste0(last_name, ", ", first_name),
            last_first = paste(last_name, first_name),
            first_maiden_last = paste(first_name, maiden_name, last_name),
@@ -669,13 +661,30 @@ parties <- read_csv(here::here("data", "HSall_parties.csv"))
              str_replace("Senate", "Senator") %>% 
              str_replace("House", "Representative"))
 
-  # check for mirrior names 
+  # check for mirror names 
   members %>% filter(last_first %in% members$first_last)
-  members %>% filter(maiden_comma_first %in% members$last_comma_first)
-  members %>% filter(last_name %in% str_to_upper(members$first_name))
   
+  # duplicates created by using maiden names 
+  members %>% filter(maiden_comma_first %in% members$last_comma_first)
+  
+  # last names that are also first names
+  problem_last_names <- members %>% 
+    filter(congress > 105) %>%
+    filter(last_name %in% str_to_upper(first_name) ) %>% 
+    distinct(last_name)
+  
+  problem_last_names
+  
+  members %>% 
+    filter(congress > 105) %>%
+    filter(first_name %in% {problem_last_names$last_name |>
+             str_to_title() }
+           ) %>% 
+    distinct(bioname)
+  
+  # non-unique in chamber and congress 
   # drop chamber_last when there are multiple members with the same last name in that chamber 
-  # FIXME -- may be able to do this by congress if matching by congress in the future; right now it would create duplicates and then drop them in the merge
+  # FIXME --  do this by congress if matching by congress in the future; right now it would create duplicates and then drop them in the merge
   last_name_count <- members %>% 
     select(last_name, chamber, bioname, congress) %>%  
     distinct() %>%     
@@ -690,6 +699,7 @@ parties <- read_csv(here::here("data", "HSall_parties.csv"))
 
   members %<>% 
     full_join(last_name_count) %>% # add counts 
+    group_by(congress) %>% 
     # if last names are not unique OR if last names are a first name, require state info
     mutate(chamber_last = ifelse(last_name_count > 1 | last_name %in% (str_to_upper(members$first_name) %>% str_extract("^[A-Z]*") ),  
                                  # if chamber last is not unique, require state 
@@ -697,7 +707,7 @@ parties <- read_csv(here::here("data", "HSall_parties.csv"))
                                        chamber_last)) %>% # remove non unique 
     select(-last_name_count) # drop counts
   
-  # non-unique last names
+  # non-unique last names in a congress 
   last_name_count <- members %>% 
     select(last_name, bioname, congress) %>%  
     distinct() %>%     
@@ -762,8 +772,91 @@ replace404 <- . %>% ifelse(str_detect(., "\\bNA\\b|404error"), "404error", .)
 
 members %<>% mutate_all(replace404)
 
+# Deduping before assembling pattern
+df <- members 
+
+library(knitr)
+library(dplyr)
+library(tidyr)
+library(stringr)
+
+
+dupe_name_rows <- df %>%
+  group_by(congress) %>% 
+  mutate(.row_id = row_number()) %>%
+  pivot_longer(
+    cols = all_of(matches("_last|_first|comma")),
+    names_to = "name_field",
+    values_to = "name_value"
+  ) %>%
+  mutate(
+    name_value_clean = str_to_lower(str_squish(name_value))
+  ) %>%
+  filter(!is.na(name_value_clean), 
+         name_value_clean != "", 
+         name_value_clean != "404error") %>%
+  distinct(bioname, name_value_clean, congress)  %>% 
+  add_count(name_value_clean, congress, name = "dup_n") %>% 
+  filter(dup_n > 1) %>% 
+  arrange(-congress, name_value_clean) 
+
+# Inspect 
+# NOTE: SOME OF THIS SHOULD BE FIXED ABOVE BECAUSE THEY CORRECTLY MATCH TO ONE AND NOT THE OTHER
+# OTHERS NEED TO BE DELETED BECAUSE THEY ARE AMBIGIOUS 
+dupe_name_rows |> 
+  filter(congress > 104) |> 
+  head(1000) |> 
+  kable()
+
+write_csv(dupe_name_rows, file = here::here("data", "inspect", "dupe_name_rows.csv"))
+
+name_cols <- df %>%
+  ungroup() %>% 
+  select(matches("_last|_first|comma"), -any_of("last_means")) %>%
+  names()
+
+name_cols
+
+dupe_keys <- dupe_name_rows %>%
+  distinct(congress, name_value_clean) %>%
+  mutate(is_duplicate_name_value = TRUE)
+
+df_deduped <- df %>%
+  mutate(.row_id = row_number()) %>%
+  pivot_longer(
+    cols = all_of(name_cols),
+    names_to = "name_field",
+    values_to = "name_value",
+    values_transform = list(name_value = as.character)
+  ) %>%
+  mutate(
+    name_value_clean = str_to_lower(str_squish(name_value))
+  ) %>%
+  left_join(
+    dupe_keys,
+    by = c("congress", "name_value_clean")
+  ) %>%
+  mutate(
+    name_value = if_else(
+      is_duplicate_name_value %in% TRUE,
+      NA_character_,
+      name_value
+    )
+  ) %>%
+  select(-name_value_clean, -is_duplicate_name_value) %>%
+  pivot_wider(
+    names_from = name_field,
+    values_from = name_value
+  ) %>%
+  arrange(.row_id) %>%
+  select(-.row_id) %>%
+  select(all_of(names(df)))
+
+members <- df_deduped
+
 members %<>%
   # FIXME # ? is it ok to group by congress? 
+  # IT THINK WE MUST GROUP BY CONGRESS BECAUSE SOME FIXES ARE BY CONGRESS
   group_by(bioname, congress) %>%
   mutate(pattern = c(first_last,
                      first_maiden,
@@ -812,12 +905,15 @@ suspect_middle_names
 
   # causes problems, but should eventually be used for more targeted matching
  #FIXME  members %<>% select(-congresses) 
+
+# load(file = "data/members_all.rda")
+
   
 members %<>% arrange(-congress)
 
-  members_min <- members %>% select(chamber, congress, bioname, pattern, icpsr, state, state_abbrev, 
+  members_min <- members |>  dplyr::select(chamber, congress, bioname, pattern, icpsr, state, state_abbrev, 
                       #nominate_dim1, nominate_dim2, nominate_number_of_votes,
-                      district_code, bioguide_id)
+                      district_code, bioguide_id, first_name, last_name)
   
   members_all <- members 
   
