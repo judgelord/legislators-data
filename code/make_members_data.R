@@ -305,7 +305,7 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
     mutate(common_name = ifelse(bioname == "PAUL, Rand", "(Randy|Randal)", common_name)) %>%
      mutate(common_name = ifelse(bioname == "EMERSON, Jo Ann", "JoAnn", common_name)) %>%
      # Tim usually refers to the other Timothy Johnson
-    mutate(common_name = ifelse(bioname == "JOHNSON, Timothy V.", NA, common_name)) %>% 
+    mutate(common_name = ifelse(bioname == "JOHNSON, Timothy V.", "404error", common_name)) %>% 
 
     # remove accent marks (using RegEx dot for specials, not exact matching)
     mutate(common_name = ifelse(grepl("GRIJALVA, Ra.l M.", bioname), "Raul", common_name)) %>% 
@@ -559,11 +559,19 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
     mutate(first_name = ifelse(bioname == "BONNER, Jr., Josiah Robins (Jo)", "Josiah", first_name)) %>%
     mutate(first_name = ifelse(bioname == "GRUCCI, Jr., Felix J.)", "Felix", first_name)) %>% 
     # first names that reduce false matches in specific congresses 
-    mutate(first_name = ifelse(bioname == "JOHNSON, Timothy Peter (Tim)" & congress %in% 107:112, "Tim", first_name))
+    mutate(first_name = ifelse(bioname == "JOHNSON, Timothy Peter (Tim)" & congress %in% 107:112, "Tim", first_name)) 
+    
+
+  members %<>%    
+    # last names that are subsets of others 
+    mutate(last_name = ifelse(bioname == "LUJÁN, Ben Ray" & congress %in% 113:115, "LUJAN\\b[^G]*", last_name)) %>% # not lujan grisham 
+  mutate(last_name = ifelse(bioname == "TORRES, Norma Judith" & congress %in% 116, "TORRES\\b[^S]*", last_name)) %>% # not torres small # does not seem to work 
+    mutate(last_name = ifelse(bioname == "BLUNT, Roy" & congress %in% 115:117, "BLUNT\\b[^R]*", last_name)) %>% # not BLUNT ROCHESTER, Lisa
+    mutate(last_name = ifelse(bioname == "SMITH, Christopher Henry" & congress %in% 115:119, "[^E]\\bSMITH", last_name)) %>%#  not HYDE-SMITH, Cindy
+    mutate(last_name = ifelse(bioname == "BERRY, Robert Marion" & congress %in% 104:111, "\\bBERRY", last_name)) %>% # not THORNBERRY, William McClellan (Mac)
+  mutate(last_name = ifelse(bioname == "ADLER, John H." & congress %in% 104:111, "\\bADLER", last_name)) # not NADLER, Jerrold Lewis
   
-  
-     
-  
+
   
   # make blank common names NA
   #members %<>%
@@ -605,6 +613,7 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
     #mutate(middle_name = ifelse(is.na(middle_initial), str_remove_all(seo_name, ".*?-|-.*"), middle_name))
   
   # Periods
+  #TODO document that text clearning must remove punctuation 
   members$middle_initial %<>% str_remove("\\.")
   members$first_initial %<>% str_remove("\\.")
   members$middle_name %<>% str_remove("\\.")
@@ -620,6 +629,11 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
                                    str_sub(first_name, 1,1),
                                    first_initial))
   
+  replace404 <- function(x){
+    ifelse(is.na(x), "404error", x)
+  }
+  
+  members %<>% mutate_all(replace404)
   
   #create full name variables with different combinations of first, common, middle, middle initial, and last name
   members$first_last <- paste(members$first_name, members$last_name, sep = " ")
@@ -635,25 +649,23 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
   
   members %<>% 
     ungroup() %>% 
-    mutate(last = ifelse( chamber=="Senate",
-                          str_c("(^|senator )", last_name, "\\b"),
-                          str_c("(^|representative )", last_name, "\\b") ),
+    mutate(last = paste0("^", last_name, "$"), # ADDING $ TO PREVENT OVER MATCHING WITH PEOPLE WITH THE SAME LAST NAME, but may reduce matches
                           # captures wrong chambers (below, non-unique last names require a state)
-           last_comma_first = paste0(last_name, ", ", first_name),
-           last_first = paste(last_name, first_name),
-           first_maiden_last = paste(first_name, maiden_name, last_name),
+           last_comma_first = paste0("\\b",last_name, ", ", first_name, "\\b"),
+           last_first = paste0("\\b", last_name, " ", first_name, "\\b"),
+           first_maiden_last = paste(first_name, maiden_name),
            common_middle_initial_last = paste(common_name, middle_initial, last_name),
            common_maiden = paste(common_name, maiden_name),
-           first_initial_last = paste0("\\b", first_initial, " ", last_name),
+           first_initial_last = paste0("\\b", first_initial, " ", last_name, "\\b"),
            commoninitial_last = paste0("\\b", common_name %>% str_extract("[A-Z]") %>% str_sub(1, 1), " ", last_name),
-           first_middle_initial_last = paste(first_name, middle_initial, last_name),
-           firstinitial_middleinitial_last = paste(first_initial, middle_initial, last_name),
+           first_middle_initial_last = paste0("\\b", first_name, " ", middle_initial, " ", last_name),
+           firstinitial_middleinitial_last = paste0("\\b", first_initial, " ", middle_initial, " ", last_name),
            #last_comma_firstinitial_middleinitial = paste0(last_name, ", ", first_initial, " ", middle_initial), # redundent
-           last_comma_initial = paste0(last_name, ", ", first_initial, "\\b"),
-           last_comma_commoninitial = paste0(last_name, ", ", common_name %>% str_extract("[A-Z]") %>% str_sub(1, 1), "\\b"),
-           last_comma_common = paste0(last_name, ", ", common_name),
-           maiden_comma_first = paste0(maiden_name, ", ", first_name),  # e.g. Mack, Mary
-           maiden_comma_firstinitial = paste0(maiden_name, ", ", first_initial, "\\b"), # e.g. Grisham, M. in VA 
+           last_comma_initial = paste0("\\b", last_name, ", ", first_initial, "\\b"),
+           last_comma_commoninitial = paste0("\\b", last_name, ", ", common_name %>% str_extract("[A-Z]") %>% str_sub(1, 1), "\\b"),
+           last_comma_common = paste0("\\b", last_name, ", ", common_name),
+           maiden_comma_first = paste0("\\b", maiden_name, ", ", first_name),  # e.g. Mack, Mary
+           maiden_comma_firstinitial = paste0("\\b", maiden_name, ", ", first_initial, "\\b"), # e.g. Grisham, M. in VA 
            #last_comma_first_maiden = paste0(last_name, ", ", first_name, " ",maiden_name), # redundent
            #last_addlast_comma_first = paste0(last_name, " ", add_last_name, ", ", first_name),
            #addlast_comma_first = paste0(add_last_name, ", ", first_name),
@@ -753,6 +765,12 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
     select(-last_name_count) # drop counts
   
   
+  members %<>%    
+    # last names + state abbrevs that match other names 
+    mutate(chamber_last = ifelse(bioname == "GRAVES, Tom" & congress %in% 114:116, "Representative GRAVES \\(GA", chamber_last)) # not graves, GArret 
+  
+  
+  
   # # drop common last when there are multiple members with the same name
   # # commented out because I am option to over match and then drop people in merge, then fail to match people with the same name 
   # last_name_count <- members %>% 
@@ -765,12 +783,82 @@ members <- read_csv(here::here("data", "HSall_members.csv"))
   #   full_join(last_name_count) %>% 
   #   mutate(common_last = ifelse(last_name_count > 1, NA, common_last))%>% 
   #   select(-last_name_count)
-
-
-# Replace NA names with "404error"
-replace404 <- . %>% ifelse(str_detect(., "\\bNA\\b|404error"), "404error", .)
+  
+  replace404 <- function(x){
+    ifelse(is.na(x), "404error", x)
+  }
+  
+  members %<>% mutate_all(replace404)
+  
+  
+replace404 <- function(x){
+  ifelse(str_detect(x, "\\bNA\\b|\\bNA,|\\\\bNA,|\\\\bNA |404error"), "404error", x)
+}
 
 members %<>% mutate_all(replace404)
+
+members %<>% mutate(across(everything(), replace404 ))
+
+head(members$commoninitial_last, 100)
+
+
+members <- members |> 
+  mutate(first_initial_last = ifelse(bioname == "KING, Steve" & congress %in% 113:116, "404error", first_initial_last)) |> # not KING, Angus Stanley, Jr. 
+  mutate(commoninitial_last = ifelse(bioname == "KING, Steve" & congress %in% 113:116, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "KENNEDY, Mark" & congress %in% 107:109, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "KENNEDY, Mark" & congress %in% 107:109, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "THOMPSON, Glenn" & congress %in% 111:119, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "THOMPSON, Glenn" & congress %in% 111:119, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "Michael Allen (Mac)" & congress %in% 104:108, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "Michael Allen (Mac)" & congress %in% 104:108, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "AVIS, Artur" & congress %in% 108:111, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "AVIS, Artur" & congress %in% 108:111, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "MURPHY, Scott" & congress %in% 111, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "MURPHY, Scott" & congress %in% 111, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "TURNER, Robert L." & congress %in% 112, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "TURNER, Robert L." & congress %in% 112, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "JONES, Brenda" & congress %in% 115, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "JONES, Brenda" & congress %in% 115, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "JONES, Ben" & congress %in% 101:102, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "JONES, Ben" & congress %in% 101:102, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "JOHNSON, Hank" & congress %in% 111:119, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "JOHNSON, Hank" & congress %in% 111:119, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "JOHNSON, Bill" & congress %in% 112:117, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "JOHNSON, Bill" & congress %in% 112:117, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "SCOTT, Austin" & congress %in% 112:119, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "SCOTT, Austin" & congress %in% 112:119, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "DAVIS, Artur" & congress %in% 108:111, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "DAVIS, Artur" & congress %in% 108:111, "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "LEE, Susie" & congress %in% 108:111, "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "LEE, Susie", "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "COLLINS, Michael Allen (Mac)", "404error", first_initial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "SMITH, Tina", "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "SMITH, Tina", "404error", commoninitial_last)) |> 
+  mutate(first_initial_last = ifelse(bioname == "SMITH, Christopher Henry", "404error", first_initial_last)) |> 
+  mutate(commoninitial_last = ifelse(bioname == "SMITH, Christopher Henry", "404error", commoninitial_last)) |> 
+  # last first initial that is ambigous 
+  mutate(last_comma_initial = ifelse(bioname == "LEWIS, John R." & congress %in% 100:115, "404error", last_comma_initial)) |> 
+  mutate(last_comma_commoninitial = ifelse(bioname == "LEWIS, John R." & congress %in% 100:115, "404error", last_comma_commoninitial)) |> 
+  mutate(last_comma_initial = ifelse(bioname == "LEWIS, Charles Jeremy (Jerry)" & congress %in% 100:115, "404error", last_comma_initial)) |> 
+  mutate(last_comma_commoninitial = ifelse(bioname == "LEWIS, Charles Jeremy (Jerry)" & congress %in% 100:115, "404error", last_comma_commoninitial)) |> 
+  mutate(last_comma_initial = ifelse(bioname == "LEWIS, Jason Mark" & congress %in% 100:115, "404error", last_comma_initial)) |> 
+  mutate(last_comma_commoninitial = ifelse(bioname == "LEWIS, Jason Mark" & congress %in% 100:115, "404error", last_comma_commoninitial)) |> 
+  mutate(last_comma_initial = ifelse(bioname == "KENNEDY, Joseph P. III" & congress %in% 115:116, "404error", last_comma_initial)) |> 
+  mutate(last_comma_commoninitial = ifelse(bioname == "KENNEDY, Joseph P. III" & congress %in% 115:116, "404error", last_comma_commoninitial)) |>   
+  mutate(last_comma_initial = ifelse(bioname == "KENNEDY, John Neely" & congress %in% 115:116, "404error", last_comma_initial)) |> 
+  mutate(last_comma_commoninitial = ifelse(bioname == "KENNEDY, John Neely" & congress %in% 115:116, "404error", last_comma_commoninitial)) |> 
+  # same first and last but they go by different 
+  mutate(last_comma_first = ifelse(bioname == "JOHNSON, Timothy Peter (Tim)" & congress %in% 100:115, "JOHNSON, Tim\\b", last_comma_commoninitial)) |> # THIS IS ALREADY HOW IT IS 
+  # states at the end of ambigous chamber last happen to be the first two letters of the other persons name
+  mutate(chamber_last = ifelse(bioname == "SCOTT, David", "404error", chamber_last)) |> 
+  mutate(chamber_last = ifelse(bioname == "JOYCE, David" & congress %in% 116:119, "404error", chamber_last)) |> 
+  mutate(chamber_last = ifelse(bioname == "MURPHY, Timothy" & congress %in% 113:114, "404error", chamber_last)) |> 
+  mutate(chamber_last = ifelse(bioname == "MCCARTHY, Kevin" & congress %in% 110:113, "404error", chamber_last)) |> # not caroline
+  mutate(chamber_last = ifelse(bioname == "TORRES, Norma Judith" & congress %in% 116, "404error", chamber_last)) |> # not caroline
+  mutate(chamber_last = ifelse(bioname == "JOHN, Christopher" & congress %in% 106:108, "404error", chamber_last)) |> # not caroline
+  mutate(chamber_last = ifelse(bioname == "ALEXANDER, Rodney" & congress %in% 108:113, "404error", chamber_last))
+
+
 
 # Deduping before assembling pattern
 df <- members 
@@ -852,8 +940,12 @@ df_deduped <- df %>%
   select(-.row_id) %>%
   select(all_of(names(df)))
 
-members <- df_deduped
 
+## DEDUPED ## 
+members <- df_deduped 
+
+
+################### MAKE PATTERN ###############
 members %<>%
   # FIXME # ? is it ok to group by congress? 
   # IT THINK WE MUST GROUP BY CONGRESS BECAUSE SOME FIXES ARE BY CONGRESS
@@ -888,15 +980,35 @@ members %<>%
     unique() %>% # unique matches 
     str_subset("404error", negate = T) %>% # drop missing
     str_c(collapse = "|") %>% # sep with OR 
-    tolower() ) %>% # lower case 
-  ungroup()
+    tolower() %>% 
+      str_replace_all(" \\[..\\].", " ") %>% 
+      str_replace_all("\\)\\[..\\].", "\\)")) %>% # lower case 
+  ungroup() %>% 
+# post - hoc corrections for * that over-matches 
+  mutate() 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+############ SUBSETTING ################################
 
 members %<>% select(chamber, congress, bioname, pattern, icpsr, state, state_abbrev, 
                     nominate_dim1, nominate_dim2, nominate_number_of_votes,
                     district_code, bioguide_id, born, died,
                     chamber_last,
                     contains("first"),  contains("common"), contains("middle"), contains("last"), contains("maiden"))
+
+
 # mismatches between middle name and middle initial? 
 suspect_middle_names <- members %>%
   drop_na(middle_name) %>% 
@@ -923,6 +1035,10 @@ members %<>% arrange(-congress)
   save(members, file = "data/members.rda")
   
   write_csv(members, "data/members.csv")
+  
+  #archive
+  write_csv(members, paste0("data/members", Sys.Date(), ".csv"))
+  
   
   
   if(F){
