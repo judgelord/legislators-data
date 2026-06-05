@@ -3,7 +3,7 @@ library(tidyverse)
 library(magrittr)
 library(knitr)
 
-multi_files <- here::here("data", "agencies") |> str_replace("legislators", "correspondence_data") |> 
+multi_files <- here::here("data", "agencies") |> str_replace("legislators-data", "correspondence_data") |> 
   list.files(pattern = "-multi", full.names = T)
 
 load(multi_files[1])
@@ -44,7 +44,7 @@ head(multi, 200) |> kable(caption = "Multi-author letters (or possible false mat
 # not congress specific + sampling 
 multi |> distinct(FROM, bioname) |> head(100) |> kable()
 
-multi |> write_csv(here::here("tests", "out", "cor-multi-new-matches.csv"))
+multi |> write_csv(here::here("tests", "out", "cor-multi-matches.csv"))
 
 
 # TROUBLE SHOOTIUNG CODE FOR PROBLEM STRINGS 
@@ -138,13 +138,13 @@ problem <- "representative john"
 
 
 
-filter(members, pattern |> str_detect(problem), congress == 111) |> distinct(pattern)
-filter(members, pattern |> str_detect(problem)) |> select(any_of(matches("initial_last"))) |> distinct() |> kable()
+filter(members, pattern |> str_detect(problem), congress > 100) |> distinct(pattern)
+filter(members_all, pattern |> str_detect(problem), congress > 100) |> select(any_of(matches("_last"))) |> distinct() |> kable()
 
 
 
 multi |> 
-  filter(str_detect(FROM, problem))  |> 
+  filter(str_detect(FROM, "blunt"))  |> 
   distinct(FROM, congress) |> 
   extractMemberName("FROM", 
                   members = members, 
