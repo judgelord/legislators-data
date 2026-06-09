@@ -17,7 +17,9 @@ for(i in multi_files){
 
 d %<>% drop_na(congress)
 
-d1 <- d |> distinct(FROM, congress) |> 
+d1 <- d |> 
+  filter(agency %in% c("DHS_HQ")) |> 
+  distinct(FROM, congress) |> 
   extractMemberName("FROM", 
                          members = members, 
                          congress = "congress")
@@ -144,7 +146,7 @@ filter(members_all, pattern |> str_detect(problem), congress > 100) |> select(an
 
 
 multi |> 
-  filter(str_detect(FROM, "blunt"))  |> 
+  filter(str_detect(FROM, problem))  |> 
   distinct(FROM, congress) |> 
   extractMemberName("FROM", 
                   members = members, 
