@@ -25,7 +25,7 @@ d |> count(FROM, sort = T) |> filter(n>1) |> head(100) |> kable()
 d |> drop_na(congress) |> 
   count(FROM) |> 
   filter(nchar(FROM) < 1000) |> 
-  slice_max(n, n = 100) |> 
+  slice_max(n, n = 30) |> 
   arrange(-n) |> 
   kable()
 
@@ -40,9 +40,8 @@ d |> drop_na(congress) |>
 # MYSTERIES 
 #  |dutch ruppersberger             |      111|  4|
 #  |dutch ruppersberger             |      112|  4|
-# pierluisi, pedro
-# PIERLUISI, Pedro
 # |radewagen, aumua amata                  |      114|  12|DHS_USCIS_2016 |
+# |representative blunt-rochester    |      116|  16|VA     |
 
 #TODO list: x = fixed 
 
@@ -134,34 +133,48 @@ d |> drop_na(congress) |>
 # |waxman, henry a                         |      114|   1|DHS_USCIS_2016 | no longer in congress 
 
 d1 <- d |> 
-  filter(agency %in% c("DHS_USCIS", "DHS_USCIS_2016")) |> 
+  #filter(agency %in% c("DHS_USCIS", "DHS_USCIS_2016")) |> 
   extractMemberName("FROM", 
                   members = members, 
-                  congress = "congress")
+                  congress = "congress") |> 
+  # newly matched 
+  drop_na(bioname, congress) 
 
 
 # newly matched
-d1 |> drop_na(congress) |> 
+d1 |>
   count(FROM, bioname, sort = T) |> 
-  filter(nchar(FROM) < 1000) |> 
+  # filter(nchar(FROM) < 1000) |> 
   slice_max(n, n = 100) |> 
   kable()
 
 # newly matched by congress 
-d1 |> drop_na(congress) |> 
-  count(FROM, bioname, congress, sort = T) |> 
-  filter(#str_detect(FROM, "senat|repres|cong|house"),
-    nchar(FROM) < 1000) |> 
+d1 |> 
+  count(FROM, bioname, congress, 
+        agency,
+        sort = T) |> 
+  # filter(#str_detect(FROM, "senat|repres|cong|house"),
+  #   nchar(FROM) < 1000) |> 
   slice_max(n, n = 100) |> 
   arrange(-n) |> 
   kable()
 
 
+# Archive changes for future testing (these are good ones to test on because output changed based on changes to make_members_data.R)
+d1 %>% distinct(FROM, bioname, congress) %>% 
+  save(file = here::here("tests", "out", paste0("cor-missing-new-matches", Sys.time(), ".rda")))
 
-d1 |> drop_na(bioname, congress) |> distinct(FROM, bioname, congress) |> write_csv(here::here("tests", "out", "cor-missing-new-matches.csv"))
+d1 |> distinct(FROM, bioname, congress) |> 
+  write_csv(here::here("tests", "out", "cor-missing-new-matches.csv"))
 
-
-
+# trying again after changing members 
+d1 |>
+  #filter(agency %in% c("DHS_USCIS", "DHS_USCIS_2016")) |> 
+  extractMemberName("FROM", 
+                    members = members, 
+                    congress = "congress") |> 
+  # newly matched 
+  drop_na(bioname, congress) 
 
 
 # GPT fixes table (many have already been fixed---needs to be per congress )

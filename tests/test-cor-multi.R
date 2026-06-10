@@ -18,7 +18,7 @@ for(i in multi_files){
 d %<>% drop_na(congress)
 
 d1 <- d |> 
-  filter(agency %in% c("DHS_HQ")) |> 
+  #filter(agency %in% c("DHS_HQ")) |> 
   distinct(FROM, congress) |> 
   extractMemberName("FROM", 
                          members = members, 
